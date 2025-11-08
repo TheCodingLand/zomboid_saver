@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+# pyright: reportMissingImports=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportUnknownArgumentType=false
+
 import sqlite3
 import struct
 from pathlib import Path
+from typing import Any
 
 from zomboid_saver.player_parser import (
     ZomboidBinaryParser,
@@ -107,3 +110,57 @@ def test_format_player_info_includes_traits() -> None:
     assert "Alice" in formatted
     assert "Hours Survived" in formatted
     assert "Traits" in formatted
+
+
+def test_read_string_returns_empty_when_length_invalid() -> None:
+    parser = ZomboidBinaryParser(b"\x00")
+    assert parser.read_string() == ""
+
+    parser = ZomboidBinaryParser(b"\x00\x05abc")
+    parser.position = 1
+    assert parser.read_string() == ""
+
+
+def test_read_value_by_type_variants() -> None:
+    parser = ZomboidBinaryParser(struct.pack(">d", 3.5))
+    assert parser.read_value_by_type(0x01) == 3.5
+
+    parser = ZomboidBinaryParser(b"\x00\x03one")
+    assert parser.read_value_by_type(0x02) == "one"
+
+    parser = ZomboidBinaryParser(b"")
+    assert parser.read_value_by_type(0x03) is None
+    assert parser.read_value_by_type(0x04) is True
+    assert parser.read_value_by_type(0x05) is False
+    assert parser.read_value_by_type(0xFF) is None
+
+
+def test_get_player_info_falls_back_to_survivors(tmp_path: Path) -> None:
+    save_path = tmp_path / "Sandbox" / "Fallback"
+    save_path.mkdir(parents=True)
+    db_path = save_path / "players.db"
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE localPlayers (name TEXT, data BLOB)")
+    conn.execute("CREATE TABLE survivors (hours REAL, zombiekills INTEGER)")
+    conn.execute("INSERT INTO survivors (hours, zombiekills) VALUES (?, ?)", (9.0, 12))
+    conn.commit()
+    conn.close()
+
+    info = get_player_info(save_path)
+
+    assert info is not None
+    assert info["hours_survived"] == 9.0
+    assert info["zombies_killed"] == 12
+
+
+def test_get_player_info_handles_sqlite_error(monkeypatch: Any) -> None:
+    def boom(*_args: object, **_kwargs: object) -> sqlite3.Connection:
+        raise sqlite3.OperationalError("boom")
+
+    monkeypatch.setattr("sqlite3.connect", boom)
+    assert get_player_info(Path("/nonexistent")) is None
+
+
+def test_format_player_info_handles_empty_payload() -> None:
+    assert format_player_info({}) == "No player data available"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Tuple
 from unittest import mock
@@ -128,3 +129,54 @@ def test_back_up_saves_creates_archive(
 
     backups = list((config.settings.backup_save_path / mode).glob("*_ArchiveMe.zip"))
     assert backups, "expected a zipped backup to be created"
+
+
+def test_back_up_saves_raises_when_save_missing(test_env: "TestEnvironment") -> None:
+    config = test_env.config
+    zas, _module = _create_zas()
+    zas.game_mode = config.settings.default_game_mode
+    zas.save_to_backup = "Missing"
+
+    with pytest.raises(FileNotFoundError):
+        zas.back_up_saves()
+
+
+def test_keep_last_n_saves_noop_when_retain_zero(test_env: "TestEnvironment") -> None:
+    config = test_env.config
+    backup_dir = config.settings.backup_save_path / config.settings.default_game_mode
+    (backup_dir / "0_Alpha").mkdir(parents=True, exist_ok=True)
+
+    zas, _module = _create_zas()
+    zas.game_mode = config.settings.default_game_mode
+
+    zas.keep_last_n_saves(0)
+
+    assert (backup_dir / "0_Alpha").exists()
+
+
+def test_keep_last_n_saves_missing_directory_is_noop(test_env: "TestEnvironment") -> None:
+    config = test_env.config
+    zas, _module = _create_zas()
+    zas.game_mode = config.settings.default_game_mode
+
+    missing_dir = config.settings.backup_save_path / zas.game_mode
+    if missing_dir.exists():
+        shutil.rmtree(missing_dir)
+
+    zas.keep_last_n_saves(3)
+
+    assert not missing_dir.exists()
+
+
+def test_save_poller_exits_on_value_error(monkeypatch: MonkeyPatch) -> None:
+    zas, _ = _create_zas()
+
+    def boom() -> None:
+        raise ValueError("bad state")
+
+    monkeypatch.setattr(zas, "back_up_saves", boom)
+
+    with pytest.raises(SystemExit) as excinfo:
+        zas.save_poller()
+
+    assert excinfo.value.code == 1

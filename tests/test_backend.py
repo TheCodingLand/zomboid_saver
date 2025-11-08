@@ -6,6 +6,7 @@ import importlib
 import os
 import sqlite3
 import time
+import zipfile
 from pathlib import Path
 
 from typing import TYPE_CHECKING, Any
@@ -135,6 +136,42 @@ def test_get_backups_filters_by_save_name(test_env: "TestEnvironment") -> None:
     assert [item.name for item in filtered] == [target.name]
 
 
+def test_get_backups_includes_zip_archives(test_env: "TestEnvironment") -> None:
+    backend = _create_backend()
+    mode = backend.game_mode
+    backup_dir = test_env.backup_root / mode
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    zip_path = backup_dir / "111_Alpha.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("state.dat", b"payload")
+
+    folder_backup = backup_dir / "222_Alpha"
+    folder_backup.mkdir()
+
+    items = backend.get_backups(filter_save_name="Alpha")
+    names = {item.name for item in items}
+
+    assert "111_Alpha.zip" in names
+    assert "222_Alpha" in names
+
+
+def test_get_save_stats_returns_defaults_when_db_missing(test_env: "TestEnvironment") -> None:
+    backend = _create_backend()
+    mode = backend.game_mode
+    ghost = test_env.save_root / mode / "Ghost"
+    ghost.mkdir(parents=True, exist_ok=True)
+
+    stats = backend.get_save_stats("Ghost")
+
+    assert stats == {"character_name": "Unknown", "hours": 0, "zombies": 0, "traits": []}
+
+
+def test_get_thumbnail_path_returns_none_when_file_missing(test_env: "TestEnvironment") -> None:
+    backend = _create_backend()
+    assert backend.get_thumbnail_path("Missing") is None
+
+
 def test_get_save_stats_prefers_parser(
     test_env: "TestEnvironment", monkeypatch: MonkeyPatch
 ) -> None:
@@ -224,3 +261,70 @@ def test_get_thumbnail_path_returns_string(test_env: "TestEnvironment") -> None:
 
     assert thumbnail is not None
     assert thumbnail.endswith("thumb.png")
+
+
+def test_restore_backup_from_zip_archive(test_env: "TestEnvironment") -> None:
+    backend = _create_backend()
+    mode = backend.game_mode
+    zip_path = test_env.backup_root / mode / "999_Alpha.zip"
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("map/info.txt", "payload")
+
+    restored_root = backend.restore_backup(str(zip_path), "ZipRestore")
+    restored_file = Path(restored_root) / "map" / "info.txt"
+
+    assert restored_file.exists()
+    assert restored_file.read_text(encoding="utf-8") == "payload"
+
+
+def test_enforce_quota_skips_when_under_limit(test_env: "TestEnvironment") -> None:
+    backend = _create_backend()
+    config = test_env.config
+    mode = backend.game_mode
+    save_name = "Safe"
+    backup_dir = test_env.backup_root / mode
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    config.settings.save_quotas_mb[save_name] = 10
+
+    target = backup_dir / f"111_{save_name}"
+    target.mkdir()
+    _write_bytes(target / "file.bin", 1024)
+
+    assert backend.enforce_quota(save_name) == []
+
+
+def test_enforce_quota_zero_returns_empty(test_env: "TestEnvironment") -> None:
+    backend = _create_backend()
+    config = test_env.config
+    mode = backend.game_mode
+    save_name = "Unlimited"
+    backup_dir = test_env.backup_root / mode
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    config.settings.save_quotas_mb[save_name] = 0
+
+    backup = backup_dir / f"100_{save_name}"
+    backup.mkdir()
+    _write_bytes(backup / "data.bin", 2048)
+
+    assert backend.enforce_quota(save_name) == []
+
+
+def test_enforce_keep_last_noop_when_within_limit(test_env: "TestEnvironment") -> None:
+    backend = _create_backend()
+    config = test_env.config
+    config.settings.keep_last_n_saves = 5
+
+    mode = backend.game_mode
+    save_name = "Calm"
+    backup_dir = test_env.backup_root / mode
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    for idx in range(3):
+        entry = backup_dir / f"{idx}_{save_name}"
+        entry.mkdir()
+        os.utime(entry, (idx + 1, idx + 1))
+
+    assert backend.enforce_keep_last(save_name) == []
