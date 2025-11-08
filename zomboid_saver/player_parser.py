@@ -218,7 +218,7 @@ def format_player_info(info: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _main() -> None:
+def _main() -> None:  # pragma: no cover
     import os
 
     save_path = Path(os.path.expanduser(r"~\Zomboid\Saves\Sandbox\2024-12-29_14-37-29"))
