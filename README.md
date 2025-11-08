@@ -2,7 +2,7 @@
 
 Automated backup utility for Project Zomboid saves. A PyQt6 desktop app keeps watch over your game folders, performs interval backups, and lets you restore prior runs without digging through directories.
 
-> `![Coverage](https://thecodingland.github.io/zomboid_saver/coverage.svg)`
+![Coverage](https://thecodingland.github.io/zomboid_saver/coverage.svg)
 
 ## Features
 - Auto-backup the active save at a configurable interval
