@@ -37,7 +37,7 @@ jobs:
         run: uv sync --frozen --extra build
 
       - name: Run PyOxidizer build
-        run: uv run pyoxidizer build --release
+        run: uv run python -m pyoxidizer build --release
 
       - name: Package executable
         shell: pwsh
