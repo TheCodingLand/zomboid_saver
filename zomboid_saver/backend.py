@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from .config import resolve_save_quota, settings
-from zomboid_parser import get_player_info
+from .player_parser import get_player_info
 
 
 class ZomboidSaverBackend:

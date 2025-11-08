@@ -10,6 +10,6 @@
 - [x] Add unit tests, ensure 80% coverage
 - [x] Cleanup the code, remove the scripts other than the gui script, and refactor what makes sense into sub modules.
 - [x] Add github actions for tests, the test coverage badge, executable build and releases.
-- [ ] Document the program, the configuration flow and PyOxidizer build process in `README.md` (include dependency install steps).
-- remove the extra python files from ther root of the repo.
+- [x] Document the program, the configuration flow and PyOxidizer build process in `README.md` (include dependency install steps).
+- [x] Remove the extra python files from the root of the repo.
 
