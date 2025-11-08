@@ -39,7 +39,7 @@ jobs:
         run: uv run pytest
 
       - name: Generate coverage badge
-        run: uvx --from coverage-badge coverage-badge -i coverage.xml -o coverage.svg
+        run: uvx --from coverage-badge coverage-badge -o coverage.svg
 
       - name: Extract coverage percentage
         id: coverage
