@@ -36,6 +36,7 @@ jobs:
       - name: Build executable with Nuitka
         run: >-
           uv run python -m nuitka
+          --onefile
           --standalone
           --assume-yes-for-downloads
           --enable-plugin=pyqt6
@@ -46,25 +47,86 @@ jobs:
           --remove-output
           .\zomboid_saver_ui.py
 
-      - name: Package executable
+      - name: Prepare artifact
         shell: pwsh
         run: |
-          $standalone = Get-ChildItem -Path build -Directory -Filter "zomboid_saver.dist" | Select-Object -First 1
-          if (-not $standalone) { throw "Standalone directory not found. Check Nuitka output." }
+          $exePath = Join-Path $PWD "build\zomboid_saver.exe"
+          if (-not (Test-Path $exePath)) { throw "Executable not found. Check Nuitka output." }
           $artifactRoot = Join-Path $PWD "dist"
           New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
-          $zipPath = Join-Path $artifactRoot "zomboid_saver-windows.zip"
-          Compress-Archive -Path (Join-Path $standalone.FullName '*') -DestinationPath $zipPath -Force
-          "ZIP_PATH=$zipPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $target = Join-Path $artifactRoot "zomboid_saver-windows.exe"
+          Copy-Item -LiteralPath $exePath -Destination $target -Force
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: zomboid-saver-windows
-          path: dist/zomboid_saver-windows.zip
+          path: dist/zomboid_saver-windows.exe
 
       - name: Publish release asset
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/zomboid_saver-windows.zip
+          files: dist/zomboid_saver-windows.exe
+
+  linux-binary:
+    name: Linux Executable
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v1
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf chrpath
+
+      - name: Sync dependencies (build extras)
+        run: uv sync --frozen --extra build
+
+      - name: Build executable with Nuitka
+        run: >-
+          uv run python -m nuitka
+          --onefile
+          --standalone
+          --assume-yes-for-downloads
+          --enable-plugin=pyqt6
+          --output-dir=build
+          --output-filename=zomboid_saver
+          --remove-output
+          ./zomboid_saver_ui.py
+
+      - name: Prepare artifact
+        run: |
+          binary_path="build/zomboid_saver.bin"
+          if [ ! -f "$binary_path" ]; then
+            binary_path="build/zomboid_saver"
+          fi
+          if [ ! -f "$binary_path" ]; then
+            echo "Executable not found. Check Nuitka output." >&2
+            ls build
+            exit 1
+          fi
+          mkdir -p dist
+          install -Dm755 "$binary_path" dist/zomboid_saver-linux
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zomboid-saver-linux
+          path: dist/zomboid_saver-linux
+
+      - name: Publish release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/zomboid_saver-linux
