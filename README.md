@@ -18,7 +18,7 @@ Automated backup utility for Project Zomboid saves. A PyQt6 desktop app keeps wa
 
 ## Getting Started
 1. Clone the repository and switch to the project directory.
-2. Sync dependencies (including build extras if you plan to run PyOxidizer):
+2. Sync dependencies (including build extras if you plan to build a standalone executable):
 	 - GUI and tests only: `uv sync`
 	 - Include build tooling: `uv sync --extra build`
 3. Launch the GUI: `uv run python zomboid_saver_ui.py`
@@ -49,16 +49,26 @@ It respects the same configuration sources as the GUI and prints backup progress
 - CI (GitHub Actions) executes the test suite on Windows, uploads coverage artifacts, and publishes the badge to `gh-pages` on every push.
 
 ## Building the Windows Executable
-PyOxidizer packages the GUI into a standalone executable:
+Nuitka produces a standalone directory that can be zipped and distributed:
 1. Install build dependencies: `uv sync --extra build`
-2. Build locally: `uv run pyoxidizer build --release`
-3. The executable and supporting files are emitted under `build/`.
+2. Build locally:
+	```
+	uv run python -m nuitka \
+	  --standalone \
+	  --assume-yes-for-downloads \
+	  --enable-plugin=pyqt6 \
+	  --windows-console-mode=disable \
+	  --output-dir=build \
+	  --output-filename=zomboid_saver \
+	  zomboid_saver_ui.py
+	```
+3. Distribute the contents of `build/zomboid_saver.dist/` (zip and ship the folder).
 
 The `Build and Release` workflow mirrors these steps and attaches a zipped build to GitHub releases whenever a tag matching `v*` is pushed.
 
 ## Release Workflow
 - Create a tag (`git tag v0.2.0 && git push origin v0.2.0`) to trigger the release pipeline.
-- The workflow runs PyOxidizer, zips the output, uploads the artifact, and publishes a GitHub Release with the packaged build.
+- The workflow runs Nuitka, zips the output directory, uploads the artifact, and publishes a GitHub Release with the packaged build.
 - Use `gh release create` if you prefer to author notes manually; the action only needs the tag to exist.
 
 ## Troubleshooting

@@ -14,6 +14,6 @@ dependencies = [
 
 [project.optional-dependencies]
 build = [
-    "pyoxidizer>=0.24",
+    "nuitka>=2.4",
 ]
 
