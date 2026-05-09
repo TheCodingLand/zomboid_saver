@@ -46,6 +46,7 @@ def test_env(tmp_path: Path, monkeypatch: MonkeyPatch) -> Generator[TestEnvironm
         sys.modules.pop(name, None)
 
     config = importlib.import_module("zomboid_saver.config")
+    config.init(force=True)
 
     save_root.mkdir(parents=True, exist_ok=True)
     backup_root.mkdir(parents=True, exist_ok=True)

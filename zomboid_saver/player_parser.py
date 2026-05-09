@@ -7,10 +7,13 @@ few friendly details (name, traits, etc.) while tolerating format changes.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import struct
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ZomboidBinaryParser:
@@ -195,8 +198,8 @@ def get_player_info(save_path: Path) -> Optional[Dict[str, Any]]:
         conn.close()
         return None
 
-    except Exception as exc:
-        print(f"Error reading player data: {exc}")
+    except (sqlite3.Error, OSError) as exc:
+        logger.warning("Error reading player data from %s: %s", save_path, exc)
         return None
 
 
@@ -221,11 +224,12 @@ def format_player_info(info: Dict[str, Any]) -> str:
 def _main() -> None:  # pragma: no cover
     import os
 
+    logging.basicConfig(level=logging.DEBUG)
     save_path = Path(os.path.expanduser(r"~\Zomboid\Saves\Sandbox\2024-12-29_14-37-29"))
     info = get_player_info(save_path)
     if info:
-        print(format_player_info(info))
-        print("\nExtra data found:", info.get("extra_data", {}))
+        logger.info(format_player_info(info))
+        logger.info("Extra data found: %s", info.get("extra_data", {}))
 
 
 if __name__ == "__main__":

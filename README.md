@@ -47,6 +47,6 @@ All preference changes are saved instantly. You can also place overrides in a `.
 
 ## For Power Users
 - Run `uv run pytest` if you want to execute the test suite or inspect coverage locally.
-- GitHub Actions builds standalone Windows and Linux artifacts with Nuitka whenever a tag matching `v*` is pushed and attaches them to the release automatically.
+- GitHub Actions builds standalone Windows and Linux artifacts with Nuitka whenever any tag is pushed (`git tag v0.2.0 && git push origin v0.2.0`) and attaches them to the release automatically.
 
 Enjoy safer survivor stories!

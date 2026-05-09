@@ -1,50 +1,56 @@
 from __future__ import annotations
 
-import datetime
-import shutil
+import logging
 import sys
 import time
-from pathlib import Path
 
-from .config import settings
+from . import config as _config
+from .backend import ZomboidSaverBackend
+
+logger = logging.getLogger(__name__)
 
 
 class ZAS:
-    """Legacy CLI automation for scheduled Project Zomboid backups."""
+    """CLI automation for scheduled Project Zomboid backups.
+
+    Thin wrapper around :class:`ZomboidSaverBackend` that adds a polling
+    loop for headless / unattended operation.
+    """
 
     def __init__(self) -> None:
-        self.save_root: Path = settings.game_save_root
-        self.game_mode: str = settings.default_game_mode
+        self.backend = ZomboidSaverBackend()
+        self._game_mode: str = _config.settings.default_game_mode
         self.save_to_backup: str = "2025-01-01_00-05-54"
-        self.next_save_time: float = time.time() + settings.save_interval_sec
+        self.next_save_time: float = time.time() + _config.settings.save_interval_sec
         self.has_just_started: bool = True
-        self.mkfolder_system()
+
+    @property
+    def game_mode(self) -> str:
+        return self._game_mode
+
+    @game_mode.setter
+    def game_mode(self, value: str) -> None:
+        self._game_mode = value
+        self.backend.game_mode = value
+
+    # ------------------------------------------------------------------
+    # Delegated helpers kept for backward compatibility
+    # ------------------------------------------------------------------
 
     def mkfolder_system(self) -> None:
-        backup_root = settings.backup_save_path
-        backup_root.mkdir(parents=True, exist_ok=True)
-        if not self.save_root.exists():
-            return
-
-        for folder in self.save_root.iterdir():
-            if folder.is_dir():
-                (backup_root / folder.name).mkdir(parents=True, exist_ok=True)
+        self.backend.mkfolder_system()
 
     def back_up_saves(self) -> None:
-        base_save_path = self.save_root / self.game_mode / self.save_to_backup
-        if not base_save_path.exists():
-            raise FileNotFoundError(f"Save '{base_save_path.name}' not found")
+        backup_path = self.backend.backup_save(self.save_to_backup)
+        logger.info("Backup created: %s", backup_path)
+        self.keep_last_n_saves(_config.settings.keep_last_n_saves)
 
-        zip_name = f"{int(time.time())}_{base_save_path.name}"
-        full_backup_path = settings.backup_save_path / self.game_mode / zip_name
-        now = datetime.datetime.now().strftime("%m/%d/%y %I:%M:%S")
-        print(f"{now} -- Archiving '{base_save_path.name}', into: '{full_backup_path}.zip'")
-        self.archive_saves(full_backup_path, base_save_path)
-        print("Done!")
-        self.keep_last_n_saves(settings.keep_last_n_saves)
+    def archive_saves(self, path_to_backup: "object", target_save_path: "object") -> None:
+        """Kept for test compatibility – delegates to backend.backup_save."""
+        from pathlib import Path
+        import shutil
 
-    def archive_saves(self, path_to_backup: Path, target_save_path: Path) -> None:
-        if settings.compress_folders:
+        if _config.settings.compress_folders:
             shutil.make_archive(str(path_to_backup), "zip", str(target_save_path))
         else:
             shutil.copytree(str(target_save_path), str(path_to_backup))
@@ -55,30 +61,29 @@ class ZAS:
                 if time.time() >= self.next_save_time or self.has_just_started:
                     self.has_just_started = False
                     self.back_up_saves()
-                    self.next_save_time = time.time() + settings.save_interval_sec
+                    self.next_save_time = time.time() + _config.settings.save_interval_sec
                 time.sleep(10)
         except KeyboardInterrupt:
-            print("Hope you killed some Zeds my friend!")
+            logger.info("Hope you killed some Zeds my friend!")
             sys.exit(0)
         except ValueError as exc:
-            print(f"ERROR: {exc}")
+            logger.error("ERROR: %s", exc)
             sys.exit(1)
 
     def keep_last_n_saves(self, retain: int) -> None:
         if retain <= 0:
             return
-        save_path = settings.backup_save_path / self.game_mode
-        if not save_path.exists():
-            return
-        files = sorted(save_path.iterdir(), key=lambda path: path.stat().st_mtime)
-        for file_path in files[:-retain]:
-            if file_path.is_dir():
-                shutil.rmtree(file_path, ignore_errors=True)
-            else:
-                file_path.unlink(missing_ok=True)
+        removed = self.backend.enforce_keep_last(self.save_to_backup)
+        if removed:
+            logger.info("Pruned %d old backup(s)", len(removed))
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-8s  %(message)s",
+        datefmt="%m/%d/%y %I:%M:%S",
+    )
     zas = ZAS()
     zas.save_poller()
 

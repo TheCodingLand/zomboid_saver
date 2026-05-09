@@ -3,12 +3,15 @@ from __future__ import annotations
 # pyright: reportCallIssue=false
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Dict, Optional
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 def _default_backup_path() -> Path:
@@ -74,6 +77,7 @@ def load_preferences(path: Path) -> AppPreferences:
         try:
             return AppPreferences.model_validate_json(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, ValueError):
+            logger.warning("Corrupt preferences file at %s – backing up", path)
             backup = path.with_suffix(path.suffix + ".corrupt")
             backup.parent.mkdir(parents=True, exist_ok=True)
             backup.write_text(path.read_text(encoding="utf-8", errors="ignore"))
@@ -85,29 +89,64 @@ def save_preferences(preferences: AppPreferences, path: Path) -> None:
     path.write_text(preferences.model_dump_json(indent=2), encoding="utf-8")
 
 
-settings = AppSettings()  # type: ignore[call-arg]
-preferences = load_preferences(settings.preferences_path)
+def _validate_path_safe(path: Path, label: str) -> Path:
+    """Resolve *path* and reject traversal attempts (``..`` segments)."""
+    resolved = path.expanduser().resolve()
+    if ".." in path.parts:
+        raise ValueError(f"{label} must not contain '..' segments: {path}")
+    return resolved
 
-if preferences.save_quotas_mb:
-    merged = {**preferences.save_quotas_mb, **settings.save_quotas_mb}
-    settings.save_quotas_mb = merged
-elif settings.save_quotas_mb:
-    preferences.save_quotas_mb.update(settings.save_quotas_mb)
 
-if preferences.save_interval_sec is not None:
-    settings.save_interval_sec = preferences.save_interval_sec
+# ---------------------------------------------------------------------------
+# Lazy singleton – initialised on first access via ``init()``
+# ---------------------------------------------------------------------------
 
-if preferences.keep_last_n_saves is not None:
-    settings.keep_last_n_saves = preferences.keep_last_n_saves
+_initialised: bool = False
+settings: AppSettings = None  # type: ignore[assignment]
+preferences: AppPreferences = None  # type: ignore[assignment]
 
-if preferences.compress_folders is not None:
-    settings.compress_folders = preferences.compress_folders
 
-if preferences.default_game_mode:
-    settings.default_game_mode = preferences.default_game_mode
+def init(*, force: bool = False) -> None:
+    """Initialise the global *settings* and *preferences* singletons.
 
-if preferences.game_save_root:
-    settings.game_save_root = Path(preferences.game_save_root).expanduser()
+    Safe to call multiple times – subsequent calls are no-ops unless
+    *force* is ``True``.
+    """
+    global _initialised, settings, preferences  # noqa: PLW0603
+
+    if _initialised and not force:
+        return
+
+    settings = AppSettings()  # type: ignore[call-arg]
+    preferences = load_preferences(settings.preferences_path)
+
+    if preferences.save_quotas_mb:
+        merged = {**preferences.save_quotas_mb, **settings.save_quotas_mb}
+        settings.save_quotas_mb = merged
+    elif settings.save_quotas_mb:
+        preferences.save_quotas_mb.update(settings.save_quotas_mb)
+
+    if preferences.save_interval_sec is not None:
+        settings.save_interval_sec = preferences.save_interval_sec
+
+    if preferences.keep_last_n_saves is not None:
+        settings.keep_last_n_saves = preferences.keep_last_n_saves
+
+    if preferences.compress_folders is not None:
+        settings.compress_folders = preferences.compress_folders
+
+    if preferences.default_game_mode:
+        settings.default_game_mode = preferences.default_game_mode
+
+    if preferences.game_save_root:
+        settings.game_save_root = Path(preferences.game_save_root).expanduser()
+
+    _initialised = True
+    logger.debug("Config initialised (save_root=%s)", settings.game_save_root)
+
+
+# Auto-init on first import so existing call-sites keep working.
+init()
 
 
 def persist_preferences() -> None:
@@ -149,7 +188,7 @@ def update_default_game_mode(mode: str) -> None:
 
 
 def update_game_save_root(path: str | Path) -> None:
-    resolved = Path(path).expanduser()
+    resolved = _validate_path_safe(Path(path), "game_save_root")
     settings.game_save_root = resolved
     preferences.game_save_root = str(resolved)
     persist_preferences()

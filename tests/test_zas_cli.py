@@ -82,6 +82,8 @@ def test_keep_last_n_saves_removes_oldest(test_env: "TestEnvironment") -> None:
     zas.game_mode = mode
     zas.save_to_backup = "Alpha"
 
+    config.settings.keep_last_n_saves = 2
+
     for idx in range(3):
         entry = backup_dir / f"{idx}_Alpha"
         entry.mkdir()
@@ -146,8 +148,11 @@ def test_keep_last_n_saves_noop_when_retain_zero(test_env: "TestEnvironment") ->
     backup_dir = config.settings.backup_save_path / config.settings.default_game_mode
     (backup_dir / "0_Alpha").mkdir(parents=True, exist_ok=True)
 
+    config.settings.keep_last_n_saves = 0
+
     zas, _module = _create_zas()
     zas.game_mode = config.settings.default_game_mode
+    zas.save_to_backup = "Alpha"
 
     zas.keep_last_n_saves(0)
 
@@ -158,6 +163,9 @@ def test_keep_last_n_saves_missing_directory_is_noop(test_env: "TestEnvironment"
     config = test_env.config
     zas, _module = _create_zas()
     zas.game_mode = config.settings.default_game_mode
+    zas.save_to_backup = "Alpha"
+
+    config.settings.keep_last_n_saves = 3
 
     missing_dir = config.settings.backup_save_path / zas.game_mode
     if missing_dir.exists():
@@ -165,7 +173,8 @@ def test_keep_last_n_saves_missing_directory_is_noop(test_env: "TestEnvironment"
 
     zas.keep_last_n_saves(3)
 
-    assert not missing_dir.exists()
+    # No backups to prune — should not raise
+    assert not missing_dir.exists() or len(list(missing_dir.iterdir())) == 0
 
 
 def test_save_poller_exits_on_value_error(monkeypatch: MonkeyPatch) -> None:

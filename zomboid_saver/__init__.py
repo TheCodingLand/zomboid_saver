@@ -3,6 +3,7 @@
 from .config import (
     AppPreferences,
     AppSettings,
+    init,
     load_preferences,
     persist_preferences,
     preferences,
@@ -24,6 +25,7 @@ __all__ = [
     "ZomboidSaverBackend",
     "ZAS",
     "cli_main",
+    "init",
     "load_preferences",
     "persist_preferences",
     "preferences",

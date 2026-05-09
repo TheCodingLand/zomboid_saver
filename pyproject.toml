@@ -17,3 +17,7 @@ build = [
     "nuitka>=2.4",
 ]
 
+[project.scripts]
+zomboid-saver = "zomboid_saver.__main__:main"
+zomboid-saver-ui = "zomboid_saver_ui:main"
+

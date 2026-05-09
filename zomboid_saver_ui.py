@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import sys
 import time
 from pathlib import Path
@@ -52,6 +53,8 @@ from zomboid_saver.config import (
     update_save_quota,
 )
 from zomboid_saver.backend import ZomboidSaverBackend
+
+logger = logging.getLogger(__name__)
 
 
 class PreferencesDialog(QDialog):
@@ -481,17 +484,17 @@ class ZomboidSaverUI(QMainWindow):
 
         should_update = matches_current or (is_latest and is_pending_key)
 
-        print(
-            "[disk-usage-result]",
-            f"mode={game_mode}",
-            f"save={save_name}",
-            f"save_bytes={save_bytes}",
-            f"backup_bytes={backup_bytes}",
-            f"matches_current={matches_current}",
-            f"is_latest={is_latest}",
-            f"is_pending={is_pending_key}",
-            f"should_update={should_update}",
-            flush=True,
+        logger.debug(
+            "[disk-usage-result] mode=%s save=%s save_bytes=%d backup_bytes=%d "
+            "matches_current=%s is_latest=%s is_pending=%s should_update=%s",
+            game_mode,
+            save_name,
+            save_bytes,
+            backup_bytes,
+            matches_current,
+            is_latest,
+            is_pending_key,
+            should_update,
         )
 
         if should_update:
@@ -832,6 +835,14 @@ class ZomboidSaverUI(QMainWindow):
         self.manual_save_btn.clicked.connect(self.manual_backup)
         layout.addWidget(self.manual_save_btn)
 
+        # Pause / resume auto-save button
+        self.pause_btn = QPushButton("⏸ PAUSE AUTO-SAVE")
+        self.pause_btn.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
+        self.pause_btn.setMinimumHeight(40)
+        self.pause_btn.setStyleSheet(self.get_button_style("#333", "#555"))
+        self.pause_btn.clicked.connect(self.toggle_auto_save)
+        layout.addWidget(self.pause_btn)
+
         return panel
 
     def create_bottom_panel(self) -> QGroupBox:
@@ -984,6 +995,9 @@ class ZomboidSaverUI(QMainWindow):
 
     def update_timer(self) -> None:
         """Updates the countdown timer and triggers auto-save"""
+        if not self.auto_save_enabled:
+            return
+
         time_remaining = int(self.next_save_time - time.time())
 
         if time_remaining <= 0 and self.auto_save_enabled:
@@ -1071,6 +1085,19 @@ class ZomboidSaverUI(QMainWindow):
         """Performs a manual backup"""
         self.perform_backup()
 
+    def toggle_auto_save(self) -> None:
+        """Toggle the auto-save timer on or off."""
+        self.auto_save_enabled = not self.auto_save_enabled
+        if self.auto_save_enabled:
+            self.pause_btn.setText("⏸ PAUSE AUTO-SAVE")
+            self.next_save_time = time.time() + settings.save_interval_sec
+            self._set_status_message("Auto-save resumed")
+        else:
+            self.pause_btn.setText("▶ RESUME AUTO-SAVE")
+            self.timer_label.setText("PAUSED")
+            self.timer_label.setStyleSheet("color: #888; border: none;")
+            self._set_status_message("Auto-save paused")
+
     def perform_backup(self) -> None:
         """Performs the actual backup operation"""
         save_name: str = self.save_combo.currentText()
@@ -1114,7 +1141,8 @@ class ZomboidSaverUI(QMainWindow):
             # Format the display name
             mod_time = datetime.datetime.fromtimestamp(backup.stat().st_mtime)
             time_str = mod_time.strftime("%Y-%m-%d %I:%M:%S %p")
-            display_name = f"{backup.name} [{time_str}]"
+            size_str = self._format_bytes(self.backend.get_backup_size(backup))
+            display_name = f"{backup.name} [{time_str}] ({size_str})"
 
             item = QListWidgetItem(display_name)
             item.setData(Qt.ItemDataRole.UserRole, str(backup))  # Store full path
@@ -1176,6 +1204,11 @@ class ZomboidSaverUI(QMainWindow):
 
 def main() -> None:
     """Main entry point"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+        datefmt="%H:%M:%S",
+    )
     app = QApplication(sys.argv)
     app.setStyle("Fusion")  # Use Fusion style for better dark theme
 

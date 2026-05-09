@@ -1,23 +1,38 @@
 from __future__ import annotations
 
+import logging
 import shutil
 import sqlite3
 import time
+import zipfile
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, TypedDict
 
-from .config import resolve_save_quota, settings
+from . import config as _config
+from .config import resolve_save_quota
 from .player_parser import get_player_info
+
+logger = logging.getLogger(__name__)
+
+
+class SaveStats(TypedDict, total=False):
+    """Typed dictionary returned by :meth:`ZomboidSaverBackend.get_save_stats`."""
+
+    character_name: str
+    hours: float
+    zombies: int
+    traits: List[str]
+    error: str
 
 
 class ZomboidSaverBackend:
     """Core filesystem operations for Zomboid save management."""
 
     def __init__(self) -> None:
-        self.save_root: Path = settings.game_save_root
-        self.game_mode: str = settings.default_game_mode
+        self.save_root: Path = _config.settings.game_save_root
+        self.game_mode: str = _config.settings.default_game_mode
         self.save_to_backup: Optional[str] = None
-        self.backup_root: Path = settings.backup_save_path
+        self.backup_root: Path = _config.settings.backup_save_path
         self.mkfolder_system()
 
     def mkfolder_system(self) -> None:
@@ -42,22 +57,22 @@ class ZomboidSaverBackend:
         saves.sort(key=lambda item: item[1], reverse=True)
         return [save_name for save_name, _ in saves]
 
-    def get_save_stats(self, save_name: str) -> dict[str, Any]:
+    def get_save_stats(self, save_name: str) -> SaveStats:
         """Pull metadata from Project Zomboid save databases when available."""
         save_path = self.save_root / self.game_mode / save_name
 
         player_info = get_player_info(save_path)
         if player_info:
-            return {
-                "character_name": player_info.get("character_name", "Unknown"),
-                "hours": player_info.get("hours_survived", 0),
-                "zombies": player_info.get("zombies_killed", 0),
-                "traits": player_info.get("traits", []),
-            }
+            return SaveStats(
+                character_name=player_info.get("character_name", "Unknown"),
+                hours=player_info.get("hours_survived", 0),
+                zombies=player_info.get("zombies_killed", 0),
+                traits=player_info.get("traits", []),
+            )
 
         db_path = save_path / "players.db"
         if not db_path.exists():
-            return {"character_name": "Unknown", "hours": 0, "zombies": 0, "traits": []}
+            return SaveStats(character_name="Unknown", hours=0, zombies=0, traits=[])
 
         try:
             conn = sqlite3.connect(str(db_path))
@@ -65,23 +80,24 @@ class ZomboidSaverBackend:
             cursor.execute("SELECT hours, zombiekills FROM survivors LIMIT 1")
             result = cursor.fetchone()
             conn.close()
-        except Exception as exc:  # pragma: no cover - defensive branch
-            return {
-                "character_name": "Unknown",
-                "hours": 0,
-                "zombies": 0,
-                "traits": [],
-                "error": str(exc),
-            }
+        except sqlite3.Error as exc:
+            logger.warning("Failed to read %s: %s", db_path, exc)
+            return SaveStats(
+                character_name="Unknown",
+                hours=0,
+                zombies=0,
+                traits=[],
+                error=str(exc),
+            )
 
         if result:
-            return {
-                "character_name": "Unknown",
-                "hours": result[0] or 0,
-                "zombies": result[1] or 0,
-                "traits": [],
-            }
-        return {"character_name": "Unknown", "hours": 0, "zombies": 0, "traits": []}
+            return SaveStats(
+                character_name="Unknown",
+                hours=result[0] or 0,
+                zombies=result[1] or 0,
+                traits=[],
+            )
+        return SaveStats(character_name="Unknown", hours=0, zombies=0, traits=[])
 
     def get_thumbnail_path(self, save_name: str) -> Optional[str]:
         thumb_path = self.save_root / self.game_mode / save_name / "thumb.png"
@@ -98,12 +114,41 @@ class ZomboidSaverBackend:
         zip_name = f"{timestamp}_{save_name}"
         full_backup_path = self.backup_root / self.game_mode / zip_name
 
-        if settings.compress_folders:
+        if _config.settings.compress_folders:
             shutil.make_archive(str(full_backup_path), "zip", str(base_save_path))
-            return f"{full_backup_path}.zip"
+            archive_path = f"{full_backup_path}.zip"
+            self._verify_zip(Path(archive_path))
+            logger.info("Backup created: %s", archive_path)
+            return archive_path
 
         shutil.copytree(str(base_save_path), str(full_backup_path))
+        self._verify_directory_copy(base_save_path, full_backup_path)
+        logger.info("Backup created: %s", full_backup_path)
         return str(full_backup_path)
+
+    # ------------------------------------------------------------------
+    # Backup integrity verification
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _verify_zip(archive: Path) -> None:
+        """Raise if the ZIP archive is corrupt or unreadable."""
+        if not zipfile.is_zipfile(archive):
+            raise RuntimeError(f"Backup archive is not a valid ZIP: {archive}")
+        with zipfile.ZipFile(archive, "r") as zf:
+            bad = zf.testzip()
+            if bad is not None:
+                raise RuntimeError(f"Corrupt entry in backup archive: {bad}")
+
+    @staticmethod
+    def _verify_directory_copy(source: Path, dest: Path) -> None:
+        """Quick sanity-check: source and dest have the same file count."""
+        src_count = sum(1 for _ in source.rglob("*") if _.is_file())
+        dst_count = sum(1 for _ in dest.rglob("*") if _.is_file())
+        if src_count != dst_count:
+            raise RuntimeError(
+                f"Backup file count mismatch: source={src_count}, dest={dst_count}"
+            )
 
     def get_backups(
         self,
@@ -131,6 +176,10 @@ class ZomboidSaverBackend:
 
         backups.sort(key=lambda entry: entry.stat().st_mtime, reverse=True)
         return backups
+
+    def get_backup_size(self, backup: Path) -> int:
+        """Return the total size in bytes of *backup* (file or directory)."""
+        return self._get_backup_size(backup)
 
     def get_save_disk_usage(
         self, save_name: str, game_mode: Optional[str] = None
@@ -162,6 +211,7 @@ class ZomboidSaverBackend:
         else:
             shutil.copytree(str(backup_p), str(target_path))
 
+        logger.info("Restored backup %s → %s", backup_p.name, target_path)
         return str(target_path)
 
     def enforce_quota(self, save_name: str) -> List[str]:
@@ -191,7 +241,7 @@ class ZomboidSaverBackend:
         return removed
 
     def enforce_keep_last(self, save_name: str) -> List[str]:
-        retain = settings.keep_last_n_saves
+        retain = _config.settings.keep_last_n_saves
         if retain <= 0:
             return []
 
@@ -224,6 +274,14 @@ class ZomboidSaverBackend:
 
     def _remove_backup(self, backup: Path) -> None:
         if backup.is_dir():
-            shutil.rmtree(backup, ignore_errors=True)
+            try:
+                shutil.rmtree(backup)
+            except OSError:
+                logger.exception("Failed to remove backup directory %s", backup)
         else:
-            backup.unlink(missing_ok=True)
+            try:
+                backup.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                logger.exception("Failed to remove backup file %s", backup)
