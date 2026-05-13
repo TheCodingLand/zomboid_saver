@@ -15,7 +15,7 @@ env:
 
 jobs:
   windows-binary:
-    name: Windows Executable
+    name: Windows Installer
     runs-on: windows-latest
 
     steps:
@@ -30,44 +30,28 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v1
 
-      - name: Sync dependencies (build extras)
-        run: uv sync --frozen --extra build
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
 
-      - name: Build executable with Nuitka
-        run: >-
-          uv run python -m nuitka
-          --onefile
-          --standalone
-          --assume-yes-for-downloads
-          --enable-plugin=pyqt6
-          --windows-console-mode=disable
-          --msvc=latest
-          --output-dir=build
-          --output-filename=zomboid_saver
-          --remove-output
-          .\zomboid_saver_ui.py
-
-      - name: Prepare artifact
+      - name: Build executable and installer
         shell: pwsh
-        run: |
-          $exePath = Join-Path $PWD "build\zomboid_saver.exe"
-          if (-not (Test-Path $exePath)) { throw "Executable not found. Check Nuitka output." }
-          $artifactRoot = Join-Path $PWD "dist"
-          New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
-          $target = Join-Path $artifactRoot "zomboid_saver-windows.exe"
-          Copy-Item -LiteralPath $exePath -Destination $target -Force
+        run: .\scripts\build_windows_release.ps1
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: zomboid-saver-windows
-          path: dist/zomboid_saver-windows.exe
+          path: |
+            dist/zomboid_saver-windows-setup.exe
+            dist/zomboid_saver-windows.exe
 
       - name: Publish release asset
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/zomboid_saver-windows.exe
+          files: |
+            dist/zomboid_saver-windows-setup.exe
+            dist/zomboid_saver-windows.exe
 
   linux-binary:
     name: Linux Executable

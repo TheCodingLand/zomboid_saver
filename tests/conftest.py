@@ -25,6 +25,7 @@ _MODULES_TO_RESET = (
     "zomboid_saver.config",
     "zomboid_saver.cli",
     "zomboid_saver.backend",
+    "zomboid_saver.ui",
     "zomboid_saver",
     "zomboid_saver_ui",
 )

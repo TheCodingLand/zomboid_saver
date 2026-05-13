@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
 [project]
 name = "zomboid-saver"
 version = "0.1.0"
@@ -19,5 +23,11 @@ build = [
 
 [project.scripts]
 zomboid-saver = "zomboid_saver.__main__:main"
-zomboid-saver-ui = "zomboid_saver_ui:main"
+zomboid-saver-ui = "zomboid_saver.ui:main"
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["zomboid_saver"]
 

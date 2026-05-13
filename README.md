@@ -12,14 +12,14 @@ Automated backup companion for Project Zomboid. The desktop app watches your sav
 - Runs quietly in the system tray once configured.
 
 ## Quick Start (Prebuilt Downloads)
-- **Windows:** Download `zomboid_saver-windows.exe` from the latest GitHub Release, move it to a permanent folder, and double-click to launch. Windows SmartScreen may warn about an unknown publisher—choose *More info → Run anyway* to continue. The app minimizes to the tray once the first backup cycle starts.
+- **Windows:** Download `zomboid_saver-windows-setup.exe` from the latest GitHub Release, run the installer, and launch **Zomboid Auto-Saver** from the Start menu. Windows SmartScreen may warn about an unknown publisher—choose *More info → Run anyway* to continue. If you prefer a portable build, `zomboid_saver-windows.exe` is still published alongside the installer.
 - **Linux:** Download `zomboid_saver-linux`, make it executable (`chmod +x zomboid_saver-linux`), then run `./zomboid_saver-linux`. Nuitka unpacks the app to a temporary directory at runtime and cleans it up automatically when you quit.
 
 ## Quick Start (Run From Source)
 1. Install Python 3.13+ and the `uv` package manager.
 2. Clone the repository and open a terminal in the project folder.
 3. Install dependencies: `uv sync`
-4. Start the app: `uv run python zomboid_saver_ui.py`
+4. Start the app: `uv run zomboid-saver-ui`
 
 On first launch the app creates a preferences file at `%APPDATA%\zomboid_saver\preferences.json` (Windows) or `$XDG_CONFIG_HOME/zomboid_saver/preferences.json` (Linux/macOS).
 
@@ -47,6 +47,7 @@ All preference changes are saved instantly. You can also place overrides in a `.
 
 ## For Power Users
 - Run `uv run pytest` if you want to execute the test suite or inspect coverage locally.
-- GitHub Actions builds standalone Windows and Linux artifacts with Nuitka whenever any tag is pushed (`git tag v0.2.0 && git push origin v0.2.0`) and attaches them to the release automatically.
+- On Windows, build both the portable executable and installer locally with `pwsh -File .\scripts\build_windows_release.ps1`. Install Inno Setup first so `iscc.exe` is available on your `PATH`.
+- GitHub Actions builds the Windows installer plus portable executable, and the Linux standalone binary, whenever any tag is pushed (`git tag v0.2.0 && git push origin v0.2.0`) and attaches them to the release automatically.
 
 Enjoy safer survivor stories!
